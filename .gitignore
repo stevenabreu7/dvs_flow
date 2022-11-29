@@ -1,3 +1,8 @@
+# data
+data/numpy/*
+data/raw/*
+data/compressed/*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
