@@ -23,7 +23,7 @@ for ch in "AB":
     wizard = Wizard(encoding="evt3", fpath=f"./data/{ch}{idx}.raw")
     arr = wizard.read()
     print(f"{ch}{idx}:", arr.shape)
-    np.save(arr, f"./data/numpy/{ch}{idx}.npy"
+    np.save(f"./data/numpy/{ch}{idx}.npy", arr)
 ```
 
 ### Install relevant packages
