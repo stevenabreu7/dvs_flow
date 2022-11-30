@@ -2,6 +2,7 @@
 data/numpy/*
 data/raw/*
 data/compressed/*
+models/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

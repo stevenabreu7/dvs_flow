@@ -1,9 +1,9 @@
 """
 Steven Abreu, 2022.
 
-Run this script to compress the numpy arrays from ./data/numpy through spatial
-downsampling and temporal low-pass-filtering, storing the resulting arrays in
-./data/compressed.
+Run this script to compress the raw data from ./data/raw through spatial
+downsampling and temporal low-pass-filtering, storing the resulting arrays as
+numpy arrays in ./data/compressed.
 """
 from dataclasses import dataclass
 import multiprocessing
@@ -92,22 +92,21 @@ class LowPassLIF:
         return np.array(events_lpf, dtype=events.dtype)
 
 
-def load_transform_data(filename):
+def load_transform_data(*filepaths):
     """Load and transform data from given filename."""
-    wizard = Wizard(encoding="evt2", fpath=filename)
-    n_chunks = len(wizard.read())
-    print(f'{filename}: {n_chunks} chunks')
+    for filepath in filepaths:
+        n_chunks = len(Wizard(encoding="evt2", fpath=filepath).read())
+        print(f'{filepath}: {n_chunks} chunks')
 
-    ds_factor = 20
-    ds_trf = Downsample(spatial_factor=1/ds_factor)
-    lp_trf = LowPassLIF(sensor_size=(SENSOR_SIZE[0]//ds_factor, SENSOR_SIZE[1]//ds_factor, 2))
+        ds_factor = 20
+        ds_trf = Downsample(spatial_factor=1/ds_factor)
+        lp_trf = LowPassLIF(sensor_size=(SENSOR_SIZE[0]//ds_factor, SENSOR_SIZE[1]//ds_factor, 2))
 
-    wizard = Wizard(encoding="evt2", fpath=filename)
-    all_evs = lp_trf(ds_trf(wizard.read()))
-    print(f'transformed {filename}:', all_evs.shape)
+        all_evs = lp_trf(ds_trf(Wizard(encoding="evt2", fpath=filepath).read()))
+        print(f'transformed {filepath}:', all_evs.shape)
 
-    # save to new directory
-    np.save(filename.replace('/raw/', '/compressed/').replace('.raw', '.npy'), all_evs)
+        # save to new directory
+        np.save(filepath.replace('/raw/', '/compressed/').replace('.raw', '.npy'), all_evs)
 
 
 if __name__ == "__main__":
@@ -116,22 +115,28 @@ if __name__ == "__main__":
     filenames = [f"./data/raw/{ch}{idx}.raw" for ch in "AB" for idx in range(1,5)]
     os.makedirs('./data/compressed/', exist_ok=True)
 
-    if N_PROCESSORS > 1:
-        # multiprocessing
-        for bidx in range(0, len(filenames), N_PROCESSORS):
-            processes = []
-            for fname in [filenames[i] for i in range(bidx, bidx+N_PROCESSORS)]:
-                # create and start processes
-                kwargs = {'filename': fname}
-                process = multiprocessing.Process(target=load_transform_data, kwargs=kwargs)
-                processes.append((process, fname))
-                process.start()
-                print('started process for', fname)
-            for process, fname in processes:
-                # wait for processes to end
-                process.join()
-                print('ended process for', fname)
-    else:
+    if N_PROCESSORS == 1:
         # simple sequential processing
-        for fname in filenames:
-            load_transform_data(fname)
+        for filename in filenames:
+            load_transform_data(filename)
+    else:
+        # multiprocessing
+        if N_PROCESSORS == 3:
+            args = [
+                [filenames[0], filenames[1], filenames[3]],
+                [filenames[4], filenames[6], filenames[7]],
+                [filenames[2], filenames[5]]
+            ]
+        elif N_PROCESSORS == 2:
+            args = [
+                [filenames[i] for i in range(4)],
+                [filenames[i] for i in range(4, 8)]
+            ]
+        else:
+            raise ValueError('invalid number of processors given')
+
+        processes = [multiprocessing.Process(target=load_transform_data, args=arg) for arg in args]
+        for process in processes:
+            process.start()
+        for process in processes:
+            process.join()
