@@ -25,7 +25,6 @@ class CytometerDataset(Dataset):
     the expelliarmus library and its data loading functions.
 
     Parameters:
-        file_idxs ([int]): which file idxs to use (1,..,4) for both A and B.
         time_window (int): time window length for one frame (same unit as event timestamps).
         max_samples (int): how many samples to take from each file (if None, take all).
     """
@@ -49,4 +48,4 @@ class CytometerDataset(Dataset):
     def __getitem__(self, idx):
         # transform to frame
         transform = tonic.transforms.ToFrame(sensor_size=SENSOR_SIZE, time_window=self.time_window)
-        return transform(self.events[idx]), self.labels[idx]
+        return transform(self.events[idx]), self.labels[idx], idx

@@ -16,6 +16,7 @@ Notes:
 
 TODO:
 - replace torch.swapaxes with torch.transpose
+- when loading a model checkpoint, change epoch and batch accordingly
 - add validation data
 - add testing: uncomment data loading, and compute during training:
 # # test
@@ -152,7 +153,7 @@ acc_hist = []
 t_0 = time.time()
 print('loading data...')
 for epoch in range(N_EPOCHS):
-    for bidx, (data, targets) in enumerate(iter(trainloader)):
+    for bidx, (data, targets, real_idxs) in enumerate(iter(trainloader)):
         # continue
         t_start = time.time()
         data = data.to(device)
@@ -160,12 +161,14 @@ for epoch in range(N_EPOCHS):
 
         # forward pass
         net.train()
-        if args.debug:
+        if args.debug and (bidx in range(5) or bidx % 5 == 0):
+            # if debug, save all data for one of five batches (and the first five batches)
             spk1, mem1, spk_out, mem2 = net(data)
             np.save(f'{BASE_PATH}/spk1_e{epoch+1}_b{bidx+1}.npy', spk1.detach().numpy())
             np.save(f'{BASE_PATH}/mem1_e{epoch+1}_b{bidx+1}.npy', mem1.detach().numpy())
             np.save(f'{BASE_PATH}/spk2_e{epoch+1}_b{bidx+1}.npy', spk_out.detach().numpy())
             np.save(f'{BASE_PATH}/mem2_e{epoch+1}_b{bidx+1}.npy', mem2.detach().numpy())
+            np.save(f'{BASE_PATH}/realidxs_e{epoch+1}_b{bidx+1}.npy', real_idxs.detach().numpy())
             del mem1, spk1, mem2
         else:
             spk_out, _ = net(data)
