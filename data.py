@@ -48,4 +48,4 @@ class CytometerDataset(Dataset):
     def __getitem__(self, idx):
         # transform to frame
         transform = tonic.transforms.ToFrame(sensor_size=SENSOR_SIZE, time_window=self.time_window)
-        return transform(self.events[idx]), self.labels[idx], idx
+        return transform(self.events[idx]), self.labels[idx]
