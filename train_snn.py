@@ -1,0 +1,195 @@
+"""
+Steven Abreu, 2022
+
+Train spiking neural network with one hidden layer to do binary classification on event-based data.
+
+Arguments:
+    name: name of the run (used as folder name for cache, model checkpoints, other logs).
+
+Optional arguments:
+    -d, --debug (bool): run in debug mode (saves membrane and spike values for all layers).
+    --maxsamples (int): max number of samples to load from each file (default: None -> load all).
+    --checkpoint (str): path to checkpoint file to load network parameters from.
+
+Notes:
+- data loading time comparison: simple 1.6s / cached 1.4s / batch-cached 0.2s
+
+TODO:
+- replace torch.swapaxes with torch.transpose
+- add validation data
+- add testing: uncomment data loading, and compute during training:
+# # test
+# net.eval()
+# for i, (test_data, test_targets) in enumerate(iter(testloader)):
+#     spk_rec, _ = net(test_data)
+#     test_loss = loss_fn(torch.swapaxes(spk_rec, 0, 1), test_targets)
+#     test_acc = SF.accuracy_rate(torch.swapaxes(spk_rec, 0, 1), test_targets)
+#     print(f"test loss {i} {test_loss.item():6.2f}, accuracy {test_acc * 100:6.2f}%")
+# # test
+# net.eval()
+# # test_idx = random.randint(0, len(testloader))
+# # for test_i, (test_data, test_targets) in enumerate(iter(testloader)):
+# #     if test_i == test_idx:
+# #         break
+# test_data, test_targets = next(iter(testloader))
+# spk_out, _ = net(test_data)
+# test_loss = loss_fn(torch.swapaxes(spk_out, 0, 1), test_targets)
+# test_acc = SF.accuracy_rate(torch.swapaxes(spk_out, 0, 1), test_targets)
+# print(f"test loss {test_loss.item():6.2f}, accuracy {test_acc * 100:6.2f}% (idx: 0)")
+"""
+import argparse
+import os
+import shutil
+import time
+from functools import reduce
+import numpy as np
+import tonic
+from tonic import DiskCachedDataset
+import torch
+from torch.utils.data import DataLoader
+from snntorch import functional as SF
+from snntorch import surrogate
+from data import CytometerDataset, SENSOR_SIZE
+from network import CytometerNetwork
+
+
+##############################
+# parse arguments, run checks
+##############################
+
+parser = argparse.ArgumentParser()
+parser.add_argument('name')
+parser.add_argument('--checkpoint')
+parser.add_argument('--maxsamples', type=int)
+parser.add_argument('-d', '--debug', action='store_true')
+args = parser.parse_args()
+print('starting run:', args.name)
+
+# assert base path is not taken already
+BASE_PATH = f'models/{args.name}'
+if os.path.exists(BASE_PATH) and len(os.listdir(BASE_PATH)) > 0:
+    input('model name exists already. press any key to continue')
+os.makedirs(BASE_PATH, exist_ok=True)
+
+# copy files to model folder (for logging)
+shutil.copy('train_snn.py', f'{BASE_PATH}/train_snn.py')
+shutil.copy('network.py', f'{BASE_PATH}/network.py')
+shutil.copy('data.py', f'{BASE_PATH}/data.py')
+
+# assert checkpoint exists, if given
+if args.checkpoint is not None:
+    print(args.checkpoint)
+    assert os.path.exists(args.checkpoint), 'checkpoint file not found'
+
+##############################
+# data loading
+##############################
+
+tr_fidxs = [1]
+# te_fidxs = [4]
+tr_fstr = reduce(lambda x,y: x+y, map(str, tr_fidxs))
+# te_fstr = reduce(lambda x,y: x+y, map(str, te_fidxs))
+trainset = CytometerDataset(file_idxs=tr_fidxs, max_samples=args.maxsamples, time_window=1)
+# testset = CytometerDataset(file_idxs=te_fidxs, max_samples=args.maxsamples, time_window=1)
+cached_trainset = DiskCachedDataset(trainset, cache_path=f'./cache/{args.name}_train{tr_fstr}')
+# cached_testset = DiskCachedDataset(testset, cache_path=f'./cache/{args.name}_test{te_fstr}')
+print(f'loading train files {tr_fstr} with {len(trainset)} samples')
+# print(f'loading test files {te_fstr} with {len(testset)} samples')
+
+# batched dataloaders
+BATCH_SIZE = 512
+padding = tonic.collation.PadTensors()
+trainloader = DataLoader(cached_trainset, batch_size=BATCH_SIZE, collate_fn=padding, shuffle=True)
+# testloader = DataLoader(cached_testset, batch_size=BATCH_SIZE, collate_fn=padding)
+
+##############################
+# setup network
+##############################
+
+# determine torch device
+device = torch.device("cpu")
+if torch.cuda.is_available():
+    device = torch.device("cuda")
+# elif torch.backends.mps.is_available():
+#     device = torch.device("mps")
+print('running on', device)
+
+# set up network with hyperparameters
+net_params = {
+    'n_inputs': reduce(lambda x, y: x*y, SENSOR_SIZE),
+    'n_hidden': 100,
+    'n_outputs': 20,
+    'threshold': 0.5,
+    'beta': 0.9,
+    'spk_grad': surrogate.fast_sigmoid(slope=75),
+    'debug': args.debug
+}
+net = CytometerNetwork(**net_params).to(device)
+
+# load state dict, if given
+if args.checkpoint:
+    print('loading state dict:', args.checkpoint)
+    net.load_state_dict(torch.load(args.checkpoint))
+
+##############################
+# setup training
+##############################
+
+# optimizer and loss function
+IS_POPULATION = True
+N_CLASSES = 2
+optimizer = torch.optim.Adam(
+    net.parameters(), lr=2e-2, betas=(0.9, 0.999)
+)
+lossf = SF.mse_count_loss(
+    correct_rate=0.8, incorrect_rate=0.2, population_code=IS_POPULATION, num_classes=N_CLASSES
+)
+
+# training loop
+N_EPOCHS = 10
+loss_hist = []
+acc_hist = []
+t_0 = time.time()
+print('loading data...')
+for epoch in range(N_EPOCHS):
+    for bidx, (data, targets) in enumerate(iter(trainloader)):
+        # continue
+        t_start = time.time()
+        data = data.to(device)
+        targets = targets.to(device)
+
+        # forward pass
+        net.train()
+        if args.debug:
+            spk1, mem1, spk_out, mem2 = net(data)
+            np.save(f'{BASE_PATH}/spk1_e{epoch+1}_b{bidx+1}.npy', spk1.detach().numpy())
+            np.save(f'{BASE_PATH}/mem1_e{epoch+1}_b{bidx+1}.npy', mem1.detach().numpy())
+            np.save(f'{BASE_PATH}/spk2_e{epoch+1}_b{bidx+1}.npy', spk_out.detach().numpy())
+            np.save(f'{BASE_PATH}/mem2_e{epoch+1}_b{bidx+1}.npy', mem2.detach().numpy())
+            del mem1, spk1, mem2
+        else:
+            spk_out, _ = net(data)
+        loss = lossf(torch.swapaxes(spk_out, 0, 1), targets)
+
+        # gradient calculation + weight update
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        # accuracy + log
+        acc = SF.accuracy_rate(torch.swapaxes(spk_out, 0, 1), targets, 
+                               population_code=IS_POPULATION, num_classes=N_CLASSES)
+        t_elapsed = time.time() - t_start
+        t_total = time.time()-t_0
+        print(f"Epoch {epoch+1}, batch {bidx+1:2}/{len(trainloader)} ({t_elapsed:4.1f}s):", end=" ")
+        print(f"loss {loss.item():6.2f}, accuracy {acc * 100:6.2f}% [{t_total:4.1f}s]")
+
+        # Store loss history for future plotting
+        loss_hist.append(loss.item())
+        acc_hist.append(acc)
+
+        # store model and state dict
+        if args.checkpoint is None:
+            torch.save(net.state_dict(), f'{BASE_PATH}/SD_e{epoch+1}_b{bidx+1}.pt')
+            np.save(f'{BASE_PATH}/loss.npy', np.array(loss_hist))
+            np.save(f'{BASE_PATH}/acc.npy', np.array(acc_hist))

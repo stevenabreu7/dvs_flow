@@ -29,3 +29,5 @@ python script_raw_to_numpy_data.py
 ```bash
 python script_compress_data.py
 ```
+
+**TODO: the data that is actually used is already batched into frames of event, using the metavision SDK. Support for that is still missing in expelliarmus (perhaps coming soon? or is it easy/efficient enough to do it with numpy?).**

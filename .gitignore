@@ -1,8 +1,9 @@
 # data
-data/numpy/*
-data/raw/*
-data/compressed/*
+data/*
 models/*
+playground.ipynb
+playground/*
+cache/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
