@@ -147,13 +147,13 @@ lossf = SF.mse_count_loss(
 )
 
 # training loop
-N_EPOCHS = 10
+N_EPOCHS = 20
 loss_hist = []
 acc_hist = []
 t_0 = time.time()
 print('loading data...')
 for epoch in range(N_EPOCHS):
-    for bidx, (data, targets, real_idxs) in enumerate(iter(trainloader)):
+    for bidx, (data, targets) in enumerate(iter(trainloader)):
         # continue
         t_start = time.time()
         data = data.to(device)
@@ -168,7 +168,9 @@ for epoch in range(N_EPOCHS):
             np.save(f'{BASE_PATH}/mem1_e{epoch+1}_b{bidx+1}.npy', mem1.detach().numpy())
             np.save(f'{BASE_PATH}/spk2_e{epoch+1}_b{bidx+1}.npy', spk_out.detach().numpy())
             np.save(f'{BASE_PATH}/mem2_e{epoch+1}_b{bidx+1}.npy', mem2.detach().numpy())
-            np.save(f'{BASE_PATH}/realidxs_e{epoch+1}_b{bidx+1}.npy', real_idxs.detach().numpy())
+            if epoch == 0:
+                np.save(f'{BASE_PATH}/targets_{bidx+1}.npy', targets.detach().numpy())
+            # np.save(f'{BASE_PATH}/realidxs_e{epoch+1}_b{bidx+1}.npy', real_idxs.detach().numpy())
             del mem1, spk1, mem2
         else:
             spk_out, _ = net(data)
