@@ -161,7 +161,7 @@ for epoch in range(N_EPOCHS):
 
         # forward pass
         net.train()
-        if args.debug and (bidx in range(5) or bidx % 5 == 0):
+        if args.debug and (bidx == 0 or (bidx+1) % 5 == 0):
             # if debug, save all data for one of five batches (and the first five batches)
             spk1, mem1, spk_out, mem2 = net(data)
             np.save(f'{BASE_PATH}/spk1_e{epoch+1}_b{bidx+1}.npy', spk1.detach().numpy())
