@@ -18,25 +18,6 @@ TODO:
 - replace torch.swapaxes with torch.transpose
 - when loading a model checkpoint, change epoch and batch accordingly
 - add validation data
-- add testing: uncomment data loading, and compute during training:
-# # test
-# net.eval()
-# for i, (test_data, test_targets) in enumerate(iter(testloader)):
-#     spk_rec, _ = net(test_data)
-#     test_loss = loss_fn(torch.swapaxes(spk_rec, 0, 1), test_targets)
-#     test_acc = SF.accuracy_rate(torch.swapaxes(spk_rec, 0, 1), test_targets)
-#     print(f"test loss {i} {test_loss.item():6.2f}, accuracy {test_acc * 100:6.2f}%")
-# # test
-# net.eval()
-# # test_idx = random.randint(0, len(testloader))
-# # for test_i, (test_data, test_targets) in enumerate(iter(testloader)):
-# #     if test_i == test_idx:
-# #         break
-# test_data, test_targets = next(iter(testloader))
-# spk_out, _ = net(test_data)
-# test_loss = loss_fn(torch.swapaxes(spk_out, 0, 1), test_targets)
-# test_acc = SF.accuracy_rate(torch.swapaxes(spk_out, 0, 1), test_targets)
-# print(f"test loss {test_loss.item():6.2f}, accuracy {test_acc * 100:6.2f}% (idx: 0)")
 """
 import argparse
 import os
@@ -60,11 +41,18 @@ from network import CytometerNetwork
 
 parser = argparse.ArgumentParser()
 parser.add_argument('name')
+parser.add_argument('files')
 parser.add_argument('--checkpoint')
 parser.add_argument('--maxsamples', type=int)
+parser.add_argument('--epochs', type=int)
 parser.add_argument('-d', '--debug', action='store_true')
+parser.add_argument('-g', '--gpu', action='store_true')
 args = parser.parse_args()
 print('starting run:', args.name)
+
+# get train file idxs
+tr_fidxs = list(map(int, list(args.files)))
+print('files:', tr_fidxs)
 
 # assert base path is not taken already
 BASE_PATH = f'models/{args.name}'
@@ -86,22 +74,15 @@ if args.checkpoint is not None:
 # data loading
 ##############################
 
-tr_fidxs = [1]
-# te_fidxs = [4]
 tr_fstr = reduce(lambda x,y: x+y, map(str, tr_fidxs))
-# te_fstr = reduce(lambda x,y: x+y, map(str, te_fidxs))
 trainset = CytometerDataset(file_idxs=tr_fidxs, max_samples=args.maxsamples, time_window=1)
-# testset = CytometerDataset(file_idxs=te_fidxs, max_samples=args.maxsamples, time_window=1)
 cached_trainset = DiskCachedDataset(trainset, cache_path=f'./cache/{args.name}_train{tr_fstr}')
-# cached_testset = DiskCachedDataset(testset, cache_path=f'./cache/{args.name}_test{te_fstr}')
 print(f'loading train files {tr_fstr} with {len(trainset)} samples')
-# print(f'loading test files {te_fstr} with {len(testset)} samples')
 
 # batched dataloaders
-BATCH_SIZE = 512
+BATCH_SIZE = 64 if args.gpu else 512
 padding = tonic.collation.PadTensors()
 trainloader = DataLoader(cached_trainset, batch_size=BATCH_SIZE, collate_fn=padding, shuffle=True)
-# testloader = DataLoader(cached_testset, batch_size=BATCH_SIZE, collate_fn=padding)
 
 ##############################
 # setup network
@@ -147,7 +128,7 @@ lossf = SF.mse_count_loss(
 )
 
 # training loop
-N_EPOCHS = 20
+N_EPOCHS = args.epochs
 loss_hist = []
 acc_hist = []
 t_0 = time.time()
@@ -161,17 +142,20 @@ for epoch in range(N_EPOCHS):
 
         # forward pass
         net.train()
-        if args.debug and (bidx == 0 or (bidx+1) % 5 == 0):
+        every_n_batches = 100 if BATCH_SIZE < 100 else 10
+        if args.debug and (bidx == 0 or (bidx+1) % every_n_batches == 0):
             # if debug, save all data for one of five batches (and the first five batches)
             spk1, mem1, spk_out, mem2 = net(data)
-            np.save(f'{BASE_PATH}/spk1_e{epoch+1}_b{bidx+1}.npy', spk1.detach().numpy())
-            np.save(f'{BASE_PATH}/mem1_e{epoch+1}_b{bidx+1}.npy', mem1.detach().numpy())
-            np.save(f'{BASE_PATH}/spk2_e{epoch+1}_b{bidx+1}.npy', spk_out.detach().numpy())
-            np.save(f'{BASE_PATH}/mem2_e{epoch+1}_b{bidx+1}.npy', mem2.detach().numpy())
+            np.save(f'{BASE_PATH}/spk1_e{epoch+1}_b{bidx+1}.npy', spk1.cpu().detach().numpy())
+            np.save(f'{BASE_PATH}/mem1_e{epoch+1}_b{bidx+1}.npy', mem1.cpu().detach().numpy())
+            np.save(f'{BASE_PATH}/spk2_e{epoch+1}_b{bidx+1}.npy', spk_out.cpu().detach().numpy())
+            np.save(f'{BASE_PATH}/mem2_e{epoch+1}_b{bidx+1}.npy', mem2.cpu().detach().numpy())
             if epoch == 0:
-                np.save(f'{BASE_PATH}/targets_{bidx+1}.npy', targets.detach().numpy())
+                np.save(f'{BASE_PATH}/targets_{bidx+1}.npy', targets.cpu().detach().numpy())
             # np.save(f'{BASE_PATH}/realidxs_e{epoch+1}_b{bidx+1}.npy', real_idxs.detach().numpy())
             del mem1, spk1, mem2
+        elif args.debug:
+            _, _, spk_out, mem2 = net(data)
         else:
             spk_out, _ = net(data)
         loss = lossf(torch.swapaxes(spk_out, 0, 1), targets)
@@ -195,6 +179,6 @@ for epoch in range(N_EPOCHS):
 
         # store model and state dict
         if args.checkpoint is None:
-            torch.save(net.state_dict(), f'{BASE_PATH}/SD_e{epoch+1}_b{bidx+1}.pt')
+            torch.save(net.cpu().state_dict(), f'{BASE_PATH}/SD_e{epoch+1}_b{bidx+1}.pt')
             np.save(f'{BASE_PATH}/loss.npy', np.array(loss_hist))
             np.save(f'{BASE_PATH}/acc.npy', np.array(acc_hist))
