@@ -43,12 +43,20 @@ parser = argparse.ArgumentParser()
 parser.add_argument('name')
 parser.add_argument('files')
 parser.add_argument('--checkpoint')
-parser.add_argument('--maxsamples', type=int)
+parser.add_argument('--maxsamples')
 parser.add_argument('--epochs', type=int)
 parser.add_argument('-d', '--debug', action='store_true')
 parser.add_argument('-g', '--gpu', action='store_true')
 args = parser.parse_args()
 print('starting run:', args.name)
+
+# assert maxsamples is None, int, or float (will raise exception if not)
+if args.maxsamples is not None:
+    if args.maxsamples.isdecimal():
+        args.maxsamples = int(args.maxsamples)
+    else:
+        args.maxsamples = float(args.maxsamples)
+print(args.maxsamples, type(args.maxsamples))
 
 # get train file idxs
 tr_fidxs = list(map(int, list(args.files)))
