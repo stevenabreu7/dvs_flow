@@ -56,7 +56,6 @@ if args.maxsamples is not None:
         args.maxsamples = int(args.maxsamples)
     else:
         args.maxsamples = float(args.maxsamples)
-print(args.maxsamples, type(args.maxsamples))
 
 # get train file idxs
 tr_fidxs = list(map(int, list(args.files)))
@@ -187,6 +186,6 @@ for epoch in range(N_EPOCHS):
 
         # store model and state dict
         if args.checkpoint is None:
-            torch.save(net.cpu().state_dict(), f'{BASE_PATH}/SD_e{epoch+1}_b{bidx+1}.pt')
+            torch.save(net.copy().cpu().state_dict(), f'{BASE_PATH}/SD_e{epoch+1}_b{bidx+1}.pt')
             np.save(f'{BASE_PATH}/loss.npy', np.array(loss_hist))
             np.save(f'{BASE_PATH}/acc.npy', np.array(acc_hist))
