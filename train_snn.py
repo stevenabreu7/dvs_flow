@@ -163,7 +163,7 @@ for epoch in range(N_EPOCHS):
             # np.save(f'{BASE_PATH}/realidxs_e{epoch+1}_b{bidx+1}.npy', real_idxs.detach().numpy())
             del mem1, spk1, mem2
         elif args.debug:
-            _, _, spk_out, mem2 = net(data)
+            _, _, spk_out, _ = net(data)
         else:
             spk_out, _ = net(data)
         loss = lossf(torch.swapaxes(spk_out, 0, 1), targets)
@@ -174,7 +174,7 @@ for epoch in range(N_EPOCHS):
         optimizer.step()
 
         # accuracy + log
-        acc = SF.accuracy_rate(torch.swapaxes(spk_out, 0, 1), targets, 
+        acc = SF.accuracy_rate(torch.swapaxes(spk_out, 0, 1), targets,
                                population_code=IS_POPULATION, num_classes=N_CLASSES)
         t_elapsed = time.time() - t_start
         t_total = time.time()-t_0

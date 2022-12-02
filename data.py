@@ -21,7 +21,7 @@ class CytometerDataset(Dataset):
     Dataset implementation for DVS Cytometer data.
 
     Currently assumes that each files stores and array of event arrays (where each event
-    array contains events belonging to a single sample). TODO: make this compatible with 
+    array contains events belonging to a single sample). TODO: make this compatible with
     the expelliarmus library and its data loading functions.
 
     Parameters:
