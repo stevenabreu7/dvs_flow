@@ -186,6 +186,6 @@ for epoch in range(N_EPOCHS):
 
         # store model and state dict
         if args.checkpoint is None:
-            torch.save(net.copy().cpu().state_dict(), f'{BASE_PATH}/SD_e{epoch+1}_b{bidx+1}.pt')
+            torch.save(net.state_dict(), f'{BASE_PATH}/SD_e{epoch+1}_b{bidx+1}.pt')
             np.save(f'{BASE_PATH}/loss.npy', np.array(loss_hist))
             np.save(f'{BASE_PATH}/acc.npy', np.array(acc_hist))
