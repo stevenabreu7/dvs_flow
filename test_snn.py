@@ -23,30 +23,33 @@ from network import CytometerNetwork
 
 parser = argparse.ArgumentParser()
 parser.add_argument('checkpoint')
+parser.add_argument('fileidx', type=int)
 parser.add_argument('--maxsamples', type=int)
 parser.add_argument('-d', '--debug', action='store_true')
+parser.add_argument('-g', '--gpu', action='store_true')
 args = parser.parse_args()
 print('starting testing for model:', args.checkpoint)
 BASE_PATH = '/'.join(args.checkpoint.split('/')[:-1])
 print('base_path:', BASE_PATH)
-
 
 # assert checkpoint exists, if given
 if args.checkpoint is not None:
     print(args.checkpoint)
     assert os.path.exists(args.checkpoint), 'checkpoint file not found'
 
+CHCKPT_ID = args.checkpoint.replace('SD_', '').replace('.pt', '')
+
 ##############################
 # data loading
 ##############################
 
-te_fidxs = [4]
+te_fidxs = [args.fileidx]
 te_fstr = reduce(lambda x,y: x+y, map(str, te_fidxs))
 testset = CytometerDataset(file_idxs=te_fidxs, max_samples=args.maxsamples, time_window=1)
 print(f'loading test files {te_fstr} with {len(testset)} samples')
 
 # batched dataloaders
-BATCH_SIZE = 512
+BATCH_SIZE = 64 if args.gpu else 512
 padding = tonic.collation.PadTensors()
 testloader = DataLoader(testset, batch_size=BATCH_SIZE, collate_fn=padding, shuffle=True)
 
@@ -115,7 +118,7 @@ for bidx, (data, targets) in enumerate(iter(testloader)):
     loss = lossf(torch.swapaxes(spk_out, 0, 1), targets)
 
     # accuracy + log
-    acc = SF.accuracy_rate(torch.swapaxes(spk_out, 0, 1), targets, 
+    acc = SF.accuracy_rate(torch.swapaxes(spk_out, 0, 1), targets,
                             population_code=IS_POPULATION, num_classes=N_CLASSES)
     t_elapsed = time.time() - t_start
     t_total = time.time()-t_0
@@ -126,6 +129,6 @@ for bidx, (data, targets) in enumerate(iter(testloader)):
     loss_hist.append(loss.item())
     acc_hist.append(acc)
 
-    # store model and state dict
-    np.save(f'{BASE_PATH}/test_loss.npy', np.array(loss_hist))
-    np.save(f'{BASE_PATH}/test_acc.npy', np.array(acc_hist))
+    # store performance metrics
+    np.save(f'{CHCKPT_ID}_test_loss.npy', np.array(loss_hist))
+    np.save(f'{CHCKPT_ID}_test_acc.npy', np.array(acc_hist))
