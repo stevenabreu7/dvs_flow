@@ -60,7 +60,7 @@ testloader = DataLoader(testset, batch_size=BATCH_SIZE, collate_fn=padding, shuf
 # determine torch device
 device = torch.device("cpu")
 if torch.cuda.is_available():
-    device = torch.device("cuda")
+    device = torch.device("cuda:0")
 print('running on', device)
 
 # set up network with hyperparameters
@@ -75,9 +75,9 @@ net_params = {
 }
 net = CytometerNetwork(**net_params).to(device)
 
-# load state dict, if given
+# load state dict
 print('loading state dict:', args.checkpoint)
-net.load_state_dict(torch.load(args.checkpoint))
+net.load_state_dict(torch.load(args.checkpoint, map_location=device))
 
 ##############################
 # setup training
@@ -95,11 +95,11 @@ loss_hist = []
 acc_hist = []
 t_0 = time.time()
 print('loading data...')
-for bidx, (data, targets) in enumerate(iter(testloader)):
+for bidx, (data_cpu, targets_cpu) in enumerate(iter(testloader)):
     # continue
     t_start = time.time()
-    data = data.to(device)
-    targets = targets.to(device)
+    data = data_cpu.to(device)
+    targets = targets_cpu.to(device)
 
     # forward pass
     net.eval()
@@ -115,7 +115,11 @@ for bidx, (data, targets) in enumerate(iter(testloader)):
         del mem1, spk1, mem2
     else:
         spk_out, _ = net(data)
-    loss = lossf(torch.swapaxes(spk_out, 0, 1), targets)
+    # print(data.size(), targets.size(), spk_out.size())
+    # print(data.get_device(), targets.get_device(), spk_out.get_device())
+    # print(data.device, targets.device, spk_out.device)
+    # print(next(net.parameters()).device)
+    loss = lossf(torch.swapaxes(spk_out, 0, 1).to(device), targets.to(device))
 
     # accuracy + log
     acc = SF.accuracy_rate(torch.swapaxes(spk_out, 0, 1), targets,
