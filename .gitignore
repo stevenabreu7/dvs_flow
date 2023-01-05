@@ -6,6 +6,9 @@ playground/*
 cache/*
 tmp/*
 
+# python and jupyter
+venv*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
