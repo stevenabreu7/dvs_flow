@@ -1,6 +1,6 @@
 # data
 data/*
-models/*
+results/models/*
 playground.ipynb
 playground/*
 cache/*
