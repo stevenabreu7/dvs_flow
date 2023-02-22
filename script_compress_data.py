@@ -10,11 +10,14 @@ import multiprocessing
 import os
 from expelliarmus import Wizard
 import numpy as np
+import time
 
 
 # to disable multiprocessing, set N_PROCESSORS to 1
-N_PROCESSORS = 3
+N_PROCESSORS = 1
 SENSOR_SIZE = (640, 480, 2,)
+DATA_FOLDER = '../data/quat_raw_exp'
+DST_FOLDER = '../data/quat_comp'
 
 
 @dataclass
@@ -45,29 +48,31 @@ class LowPassLIF:
     sensor_size: tuple = (32, 24, 2)
 
     def __call__(self, events):
-        print("start event sorting")
+        # start event sorting
+        ts = time.time()
         map_time_to_evidxs = {}
         for idx, evt in enumerate(events):
             if N_PROCESSORS == 1:
                 if idx % int(1e5) == 0:
-                    print(f"\r{idx/len(events):.2%}", end=" "*10)
+                    print(f"\revent sorting {idx/len(events):.2%}", end=" "*10)
             if evt['t'] in map_time_to_evidxs:
                 map_time_to_evidxs[evt['t']].append(idx)
             else:
                 map_time_to_evidxs[evt['t']] = [idx]
-        print("finished event sorting")
+        print(f"\rfinished event sorting [{(time.time()-ts)/60:.1f}min]")
 
-        print("start LIF processing")
+        # start LIF processing
         membrane = np.zeros(self.sensor_size, dtype=np.float32)
         event_times = np.unique(events['t'])
         last_updated_t = 0
         events_lpf = []
         refr = {}
+        ts = time.time()
         for idx, evtt in enumerate(event_times):
             # log progress
             if N_PROCESSORS == 1:
                 if idx % 100 == 0:
-                    print(f"\r{idx/len(event_times):.2%}", end=" "*10)
+                    print(f"\rLIF {idx/len(event_times):.2%}", end=" "*10)
             # clean up old refractory periods
             for del_key in [tk for tk in refr if tk < (evtt-self.trefr-1)]:
                 del refr[del_key]
@@ -88,49 +93,63 @@ class LowPassLIF:
                     # add refractory events
                     for i in range(self.trefr+1):
                         refr[i] = refr.get(i, []) + [(evtx,evty,evtp,evtt+i)]
-        print('finished LIF processing')
+        print(f'\rfinished LIF processing [{(time.time()-ts)/60:.1f}min]')
         return np.array(events_lpf, dtype=events.dtype)
 
 
-def load_transform_data(*filepaths):
+def read_raw_file(filepath):
+    # using expelliarmus
+    return Wizard(encoding="evt2", fpath=filepath).read()
+
+
+def load_transform_data(*fnames):
     """Load and transform data from given filename."""
-    for filepath in filepaths:
-        n_chunks = len(Wizard(encoding="evt2", fpath=filepath).read())
+    for fname in fnames:
+        filepath = f'{DATA_FOLDER}/{fname}'
+        newpath = f'{DST_FOLDER}/{fname.replace(".raw", ".npy")}'
+        if os.path.exists(newpath):
+            print(f'{newpath} exists already, skipping')
+            continue
+        n_chunks = len(read_raw_file(filepath))
         print(f'{filepath}: {n_chunks} chunks')
 
         ds_factor = 20
         ds_trf = Downsample(spatial_factor=1/ds_factor)
         lp_trf = LowPassLIF(sensor_size=(SENSOR_SIZE[0]//ds_factor, SENSOR_SIZE[1]//ds_factor, 2))
 
-        all_evs = lp_trf(ds_trf(Wizard(encoding="evt2", fpath=filepath).read()))
+        all_evs = lp_trf(ds_trf(read_raw_file(filepath)))
         print(f'transformed {filepath}:', all_evs.shape)
 
         # save to new directory
-        np.save(filepath.replace('/raw/', '/compressed/').replace('.raw', '.npy'), all_evs)
+        np.save(newpath, all_evs)
 
 
 if __name__ == "__main__":
     print(f"running with {N_PROCESSORS} processors")
 
-    filenames = [f"./data/raw/{ch}{idx}.raw" for ch in "AB" for idx in range(1,5)]
-    os.makedirs('./data/compressed/', exist_ok=True)
+    fnames = sorted([fn for fn in os.listdir(DATA_FOLDER) if fn.endswith('.raw')])
+    print(*fnames, sep='\n')
+
+    os.makedirs(DST_FOLDER, exist_ok=True)
 
     if N_PROCESSORS == 1:
         # simple sequential processing
-        for filename in filenames:
-            load_transform_data(filename)
+        ts_total = time.time()
+        for fname in fnames:
+            load_transform_data(fname)
+        print(f"DONE - total time: {(time.time()-ts_total)/60:.1f}min")
     else:
         # multiprocessing
         if N_PROCESSORS == 3:
             args = [
-                [filenames[0], filenames[1], filenames[3]],
-                [filenames[4], filenames[6], filenames[7]],
-                [filenames[2], filenames[5]]
+                [fnames[0], fnames[1], fnames[3]],
+                [fnames[4], fnames[6], fnames[7]],
+                [fnames[2], fnames[5]]
             ]
         elif N_PROCESSORS == 2:
             args = [
-                [filenames[i] for i in range(4)],
-                [filenames[i] for i in range(4, 8)]
+                [fnames[i] for i in range(4)],
+                [fnames[i] for i in range(4, 8)]
             ]
         else:
             raise ValueError('invalid number of processors given')
