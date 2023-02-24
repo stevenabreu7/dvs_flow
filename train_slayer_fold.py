@@ -1,9 +1,18 @@
+import argparse
 import os
 import lava.lib.dl.slayer as slayer
 import torch
 from torch.utils.data import DataLoader
 
-from cytometrybin import get_datasets, BinCytometryNetwork
+from cytometrybin import BinCytometryNetwork, get_datasets_fold
+
+
+# parse argument: fold to use for testing
+parser = argparse.ArgumentParser(description='Train a network on the DVS dataset')
+parser.add_argument('fold', type=int, help='fold to use for testing')
+TEST_FILE_IDX = parser.parse_args().fold
+assert TEST_FILE_IDX in range(1, 5), f'fold must be in range 1-4, got {TEST_FILE_IDX}'
+print(f'using fold {TEST_FILE_IDX} for testing')
 
 
 DATA_FOLDER = '../data/bin_1ms_comp_ds'
@@ -12,7 +21,6 @@ FIDXS = range(1, 5)
 BATCH_SIZE = 64
 EPOCHS = 50
 
-
 if torch.cuda.is_available():
     print(f'CUDA is available with {torch.cuda.device_count()} devices')
     device = torch.device('cuda')
@@ -20,9 +28,8 @@ else:
     print('CUDA is not available, falling back to CPU')
     device = torch.device('cpu')
 
-
 print('loading dataset')
-ds_tr, ds_te = get_datasets(DATA_FOLDER, temp_split=False, seed=42, run_checks=True)
+ds_tr, ds_te = get_datasets_fold(DATA_FOLDER, TEST_FILE_IDX, run_checks=True, seed=42)
 trainloader = DataLoader(ds_tr, batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
 testloader = DataLoader(ds_te, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
 
@@ -40,7 +47,7 @@ assistant = slayer.utils.Assistant(
     net, error, optimizer, stats, classifier=classifier, count_log=True
 )
 
-TRAIN_FOLDER = './trained_feb24_randsplit'
+TRAIN_FOLDER = f'./trained_fold{TEST_FILE_IDX}_feb24'
 os.makedirs(TRAIN_FOLDER, exist_ok=True)
 os.makedirs(os.path.join(TRAIN_FOLDER, 'checkpoints'), exist_ok=True)
 
@@ -49,18 +56,7 @@ for epoch in range(EPOCHS):
         out, count = assistant.train(inp, lab)
         header = 'Event rate : ' + ', '.join([f'{c.item():.4f}' for c in count])
         stats.print(epoch, iter=i, header=[header], dataloader=trainloader)
-        # inp = inp.to(device)
-        # lab = lab.to(device)
-        # net.train()
-        # out, count = net(inp)
-        # loss = error(out, lab)
-        # stats.training.num_samples += inp.shape[0]
-        # stats.training.loss_sum += loss.cpu().data.item() * out.shape[0]
-        # stats.training.correct_samples += torch.sum(classifier(out) == lab).cpu().data.item()
-        # optimizer.zero_grad()
-        # loss.backward()
-        # optimizer.step()
-    
+
     for i, (inp, lab) in enumerate(testloader):
         out, count = assistant.test(inp, lab)
         header = 'Event rate : ' + ', '.join([f'{c.item():.4f}' for c in count])

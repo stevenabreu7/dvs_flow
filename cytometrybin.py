@@ -48,7 +48,11 @@ def convert_ev_arr_to_tensor(ev_arr):
 
 class BinCytometryDataset(Dataset):
     """Dataset for binary cytometry data. Each sample is a 2D tensor of shape (2, 32, 24, 1000).
-
+    This dataset has two modes:
+    1) if test_fi is None, all files are used for training and testing. If temp_split is True,
+        the dataset is split into train/test respecting temporal order. If not, randomly.
+    2) if test_fi is not None, all files except test_fi are used for training and test_fi is used
+        for testing. temp_split has no effect here.
 
     Parameters
     ----------
@@ -56,32 +60,70 @@ class BinCytometryDataset(Dataset):
         path of dataset root
     train : bool, optional
         train/test flag, by default True
-    temporal_split : bool, optional
+    test_fi: int, optional
+        index (1-4) of file to use for testing data (use all others for training), by default None
+        if None, load data from all files and then split into train/test
+    temp_split : bool, optional
         split dataset into train/test respecting temporal order, by default False
         if False, split dataset into train/test randomly
+        !!! only works if test_fi is None !!! # CODEX WROTE THIS
+    seed: int, optional
+        random seed, by default 42 (used for splitting dataset into train/test)
+    ext: str, optional
+        file extension in data_folder ('raw' for expelliarmus, 'npy' for numpy), by default 'npy'
     """
 
     TRAIN_SPLIT = 0.8
     CHARS = "AB"
     FIDXS = list(range(1, 5))
 
-    def __init__(self, data_folder, train=True, temporal_split=False, seed=42, ext='npy'):
+    def __init__(self, data_folder, train=True, test_fi=None, temp_split=False, seed=42, ext='npy'):
         self.data_folder = data_folder
         self.EXT = ext
         self.n_total = len(glob.glob(f'{data_folder}/*.{self.EXT}'))
 
         if self.EXT == 'raw':
+            print('[WARNING] using expelliarmus is unstable [WARNING]')
             self.wizard = Wizard(encoding='evt2')
+            raise NotImplementedError('using expelliarmus is unstable')
 
         # temporary list of all possible combinations of char and fidx
         chfi_list = [f'{ch}{fi}' for ch in self.CHARS for fi in self.FIDXS]
+
+        ############################
+        # if test_fi is given
+        if test_fi is not None:
+            chfi_to_n_total = {
+                chfi: len(glob.glob(f'{data_folder}/{chfi}_*.{self.EXT}'))
+                for chfi in chfi_list
+            }
+            if train:
+                self.sample_filenames = [
+                    f'{data_folder}/{ch}{fi}_{idx}.{self.EXT}'
+                    for ch in self.CHARS for fi in self.FIDXS
+                    for idx in range(chfi_to_n_total[f'{ch}{fi}'])
+                    if fi != test_fi
+                ]
+            else:
+                # test_filenames = glob.glob(f'{data_folder}/?{test_fi}_*.{self.EXT}')
+                self.sample_filenames = [
+                    f'{data_folder}/{ch}{fi}_{idx}.{self.EXT}'
+                    for ch in self.CHARS for fi in self.FIDXS
+                    for idx in range(chfi_to_n_total[f'{ch}{fi}'])
+                    if fi == test_fi
+                ]
+            return
+
+        ############################
+        # if test_fi is *not* given
+        print('no test_fi given...')
 
         # map from id (e.g. A1) to index list of dataset
         idx_map = {
             chfi: list(range(len(glob.glob(f'{data_folder}/{chfi}_*.{self.EXT}'))))
             for chfi in chfi_list
         }
-        if not temporal_split:
+        if not temp_split:
             # shuffle indices
             for chfi in chfi_list:
                 random.seed(seed)
@@ -103,14 +145,12 @@ class BinCytometryDataset(Dataset):
         }
 
         if train:
-            self.n_samples = sum(chfi_to_n_train.values())
             self.sample_filenames = [
                 all_filenames[chfi][idx] 
                 for chfi in chfi_list
                 for idx in range(chfi_to_n_train[chfi])
             ]
         else:
-            self.n_samples = sum(chfi_to_n_test.values())
             self.sample_filenames = [
                 all_filenames[chfi][idx] 
                 for chfi in chfi_list
@@ -122,7 +162,7 @@ class BinCytometryDataset(Dataset):
 
     def __len__(self):
         """Returns the number of samples in the dataset."""
-        return self.n_samples
+        return len(self.sample_filenames)
 
     def __getitem__(self, idx, return_trial=False):
         """Returns a sample from the dataset. 
@@ -145,19 +185,19 @@ class BinCytometryDataset(Dataset):
         else:
             return data, label
 
-def get_datasets(data_folder, seed=42, temporal_split=False, run_checks=True):
+def get_datasets(data_folder, seed=42, temp_split=False, run_checks=True):
     """Get train and test datasets."""
     print('getting datasets...', end='\r')
     train_dataset = BinCytometryDataset(
         data_folder=data_folder, 
         train=True, 
-        temporal_split=temporal_split,
+        temp_split=temp_split,
         seed=seed
     )
     test_dataset = BinCytometryDataset(
         data_folder=data_folder, 
         train=False, 
-        temporal_split=temporal_split,
+        temp_split=temp_split,
         seed=seed
     )
 
@@ -176,6 +216,42 @@ def get_datasets(data_folder, seed=42, temporal_split=False, run_checks=True):
     # return datasets
     print('successfully loaded train and test datasets')
     return train_dataset, test_dataset
+
+
+def get_datasets_fold(data_folder, test_file_idx, run_checks=True, seed=42):
+    print('getting datasets...', end='\r')
+    ds_tr = BinCytometryDataset(
+        data_folder=data_folder, 
+        train=True, 
+        test_fi=test_file_idx, 
+        seed=seed
+    )
+    ds_te = BinCytometryDataset(
+        data_folder=data_folder, 
+        train=False, 
+        test_fi=test_file_idx, 
+        seed=seed
+    )
+
+    # check that train/test split is correct
+    if run_checks:
+        print('running checks...', end='\r')
+        for e in ds_tr.sample_filenames:
+            assert e not in ds_te.sample_filenames, f'train/test split overlap: {e}'
+        test_filenames = glob.glob(f'{data_folder}/?{test_file_idx}_*.npy')
+        train_filenames = [e for idx in range(1, 5) if idx != test_file_idx for e in glob.glob(f'{data_folder}/?{idx}_*.npy')]
+        assert len(train_filenames) ==  len(ds_tr.sample_filenames)
+        assert len(test_filenames) == len(ds_te.sample_filenames)
+        assert len(train_filenames) == len(set(train_filenames) & set(ds_tr.sample_filenames))
+        assert len(test_filenames) == len(set(test_filenames) & set(ds_te.sample_filenames))
+        assert ds_tr.n_total == ds_te.n_total
+        ntotal = ds_tr.n_total
+        assert len(ds_tr) + len(ds_te) == ntotal
+        assert len(ds_tr.sample_filenames) + len(ds_te.sample_filenames) == ntotal
+
+    # return datasets
+    print('successfully loaded train and test datasets')
+    return ds_tr, ds_te
 
 
 class BinCytometryNetwork(torch.nn.Module):
@@ -230,6 +306,9 @@ class BinCytometryNetwork(torch.nn.Module):
         grad = [
             b.synapse.grad_norm for b in self.blocks if hasattr(b, 'synapse')
         ]
+
+        with open(path + 'gradFlow.txt', 'a') as f:
+            f.write(",".join(list(map(str, grad))) + '\n')
 
         plt.figure()
         plt.semilogy(grad)
