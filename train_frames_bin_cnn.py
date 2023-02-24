@@ -27,6 +27,9 @@ Testing on trial 4, training on all others
 Train accuracy: 99.69%
 Test accuracy:  97.81%
 
+96.49+96.30+97.76+97.81 = 388.36 / 4 = 97.09%
+99.60+99.65+99.72+99.69 = 398.66 / 4 = 99.67%
+
 Model: "sequential"
 _________________________________________________________________
  Layer (type)                Output Shape              Param #   

@@ -6,6 +6,12 @@ playground/*
 cache/*
 tmp/*
 
+# other random stuff
+nmnist*
+
+# torch checkpoints
+*.pt
+
 # python and jupyter
 venv*
 
