@@ -1,10 +1,12 @@
 # data
 data/*
-results/models/*
+results/gent/models/*
+results/gent/models
 playground.ipynb
 playground/*
 cache/*
 tmp/*
+logs
 
 # other random stuff
 nmnist*
