@@ -255,7 +255,7 @@ def get_datasets_fold(data_folder, test_file_idx, run_checks=True, seed=42):
 
 
 class BinCytometryNetwork(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, delay=True):
         super(BinCytometryNetwork, self).__init__()
 
         neuron_params = {
@@ -264,7 +264,7 @@ class BinCytometryNetwork(torch.nn.Module):
             'voltage_decay' : 0.03,
             'tau_grad'      : 0.03,
             'scale_grad'    : 3,
-            'requires_grad' : False,
+            'requires_grad' : True,
         }
         # neuron_params_drop = {**neuron_params, 'dropout' : slayer.neuron.Dropout(p=0.05)}
         neuron_params_drop = {**neuron_params}
@@ -272,11 +272,11 @@ class BinCytometryNetwork(torch.nn.Module):
         self.blocks = torch.nn.ModuleList([
             slayer.block.cuba.Dense(
                 neuron_params_drop, 2*32*24, 512,
-                weight_norm=True, delay=True
+                weight_norm=True, delay=delay
             ),
             slayer.block.cuba.Dense(
                 neuron_params_drop, 512, 512,
-                weight_norm=True, delay=True
+                weight_norm=True, delay=delay
             ),
             slayer.block.cuba.Dense(
                 neuron_params, 512, 2,
