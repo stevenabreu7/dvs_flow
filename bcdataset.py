@@ -1,8 +1,5 @@
 import glob
-import h5py
-import matplotlib.pyplot as plt
 import numpy as np
-import lava.lib.dl.slayer as slayer
 import os
 import random
 import torch
@@ -36,51 +33,56 @@ def save_dataset_to_raw_files(data_folder, chars, fidxs, dst_folder, expelliarmu
     print('done!')
 
 
-def convert_ev_arr_to_tensor(ev_arr):
+def convert_ev_arr_to_tensor(ev_arr, timestep_us=1):
     """Convert event array (xypt compressed numpy) to tensor of shape (2*32*24, 1000)."""
-    tnsr = np.zeros((2, 32, 24, 1000))
+    # timestep is in us
+    n_timesteps = np.ceil(1_000 / timestep_us).astype(int)
+    tnsr = np.zeros((2, 32, 24, n_timesteps))
     t_start = ev_arr['t'].min() // 1_000 * 1_000
     assert ev_arr['t'].max() - t_start <= 1_000, 'event array too long'
-    tnsr[ev_arr['p'], ev_arr['x'], ev_arr['y'], ev_arr['t'] - t_start] = 1
-    tnsr = torch.from_numpy(tnsr.reshape(-1, 1000)).float()
+    tnsr[ev_arr['p'], ev_arr['x'], ev_arr['y'], (ev_arr['t'] - t_start) // timestep_us] = 1
+    tnsr = torch.from_numpy(tnsr.reshape(-1, n_timesteps)).float()
     return tnsr
 
 
 class BinCytometryDataset(Dataset):
-    """Dataset for binary cytometry data. Each sample is a 2D tensor of shape (2, 32, 24, 1000).
-    This dataset has two modes:
-    1) if test_fi is None, all files are used for training and testing. If temp_split is True,
-        the dataset is split into train/test respecting temporal order. If not, randomly.
-    2) if test_fi is not None, all files except test_fi are used for training and test_fi is used
-        for testing. temp_split has no effect here.
-
-    Parameters
-    ----------
-    data_folder : str
-        path of dataset root
-    train : bool, optional
-        train/test flag, by default True
-    test_fi: int, optional
-        index (1-4) of file to use for testing data (use all others for training), by default None
-        if None, load data from all files and then split into train/test
-    temp_split : bool, optional
-        split dataset into train/test respecting temporal order, by default False
-        if False, split dataset into train/test randomly
-        !!! only works if test_fi is None !!! # CODEX WROTE THIS
-    seed: int, optional
-        random seed, by default 42 (used for splitting dataset into train/test)
-    ext: str, optional
-        file extension in data_folder ('raw' for expelliarmus, 'npy' for numpy), by default 'npy'
-    """
-
     TRAIN_SPLIT = 0.8
     CHARS = "AB"
     FIDXS = list(range(1, 5))
 
-    def __init__(self, data_folder, train=True, test_fi=None, temp_split=False, seed=42, ext='npy'):
+    def __init__(self, data_folder, train=True, test_fi=None, temp_split=False, seed=42, ext='npy',
+                 timestep_us=1):
+        """Dataset for binary cytometry data. Each sample is a 2D tensor of shape (2, 32, 24, 1000).
+        This dataset has two modes:
+        1) if test_fi is None, all files are used for training and testing. If temp_split is True,
+            the dataset is split into train/test respecting temporal order. If not, randomly.
+        2) if test_fi is not None, all files except test_fi are used for training and test_fi is 
+            used for testing. temp_split has no effect here.
+
+        Parameters
+        ----------
+        data_folder : str
+            path of dataset root
+        train : bool, optional
+            train/test flag, by default True
+        test_fi: int, optional
+            index (1-4) of file to use for testing data (use all others for training), default: None
+            if None, load data from all files and then split into train/test
+        temp_split : bool, optional
+            split dataset into train/test respecting temporal order, by default False
+            if False, split dataset into train/test randomly
+            !!! only works if test_fi is None !!! # CODEX WROTE THIS
+        seed: int, optional
+            random seed, by default 42 (used for splitting dataset into train/test)
+        ext: str, optional
+            file extension in data_folder ('raw' for expelliarmus, 'npy' for numpy), default: 'npy'
+        """
         self.data_folder = data_folder
         self.EXT = ext
         self.n_total = len(glob.glob(f'{data_folder}/*.{self.EXT}'))
+        self.timestep_us = timestep_us
+        if 1000 // self.timestep_us != 1000 / self.timestep_us:
+            print('[WARNING] 1000/timestep_us not an integer - last time bin contains fewer events')
 
         if self.EXT == 'raw':
             print('[WARNING] using expelliarmus is unstable [WARNING]')
@@ -178,12 +180,13 @@ class BinCytometryDataset(Dataset):
         else:
             ev_arr = np.load(sample_filename)
         assert ev_arr is not None, f'event array is None: {sample_filename}'
-        data = convert_ev_arr_to_tensor(ev_arr)
+        data = convert_ev_arr_to_tensor(ev_arr, self.timestep_us)
         assert data is not None, f'event array is longer than 1000 time steps? {sample_filename}'
         if return_trial:
             return data, label, trial
         else:
             return data, label
+
 
 def get_datasets(data_folder, seed=42, temp_split=False, run_checks=True):
     """Get train and test datasets."""
@@ -218,19 +221,21 @@ def get_datasets(data_folder, seed=42, temp_split=False, run_checks=True):
     return train_dataset, test_dataset
 
 
-def get_datasets_fold(data_folder, test_file_idx, run_checks=True, seed=42):
+def get_datasets_fold(data_folder, test_file_idx, run_checks=True, seed=42, timestep_us=1):
     print('getting datasets...', end='\r')
     ds_tr = BinCytometryDataset(
         data_folder=data_folder, 
         train=True, 
         test_fi=test_file_idx, 
-        seed=seed
+        seed=seed,
+        timestep_us=timestep_us
     )
     ds_te = BinCytometryDataset(
         data_folder=data_folder, 
         train=False, 
         test_fi=test_file_idx, 
-        seed=seed
+        seed=seed,
+        timestep_us=timestep_us
     )
 
     # check that train/test split is correct
@@ -248,78 +253,9 @@ def get_datasets_fold(data_folder, test_file_idx, run_checks=True, seed=42):
         ntotal = ds_tr.n_total
         assert len(ds_tr) + len(ds_te) == ntotal
         assert len(ds_tr.sample_filenames) + len(ds_te.sample_filenames) == ntotal
+        # assert right number of timestep
+        assert ds_tr[0][0].shape[-1] == np.ceil(1000 / timestep_us).astype(int)
 
     # return datasets
     print('successfully loaded train and test datasets')
     return ds_tr, ds_te
-
-
-class BinCytometryNetwork(torch.nn.Module):
-    def __init__(self, delay=True):
-        super(BinCytometryNetwork, self).__init__()
-
-        neuron_params = {
-            'threshold'     : 1.25,
-            'current_decay' : 0.25,
-            'voltage_decay' : 0.03,
-            'tau_grad'      : 0.03,
-            'scale_grad'    : 3,
-            'requires_grad' : True,
-        }
-        # neuron_params_drop = {**neuron_params, 'dropout' : slayer.neuron.Dropout(p=0.05)}
-        neuron_params_drop = {**neuron_params}
-
-        self.blocks = torch.nn.ModuleList([
-            slayer.block.cuba.Dense(
-                neuron_params_drop, 2*32*24, 512,
-                weight_norm=True, delay=delay
-            ),
-            slayer.block.cuba.Dense(
-                neuron_params_drop, 512, 512,
-                weight_norm=True, delay=delay
-            ),
-            slayer.block.cuba.Dense(
-                neuron_params, 512, 2,
-                weight_norm=True
-            ),
-        ])
-
-    def forward(self, spike):
-        """Forward pass of the network.
-
-        Args
-        spike: input spike tensor of shape (B, P, W, H, T)
-        
-        Returns
-        spike: output spike tensor of shape (B, C, T)
-        count: output count tensor of shape (1, n_layers)
-        """
-        count = []
-        for block in self.blocks:
-            spike = block(spike)
-            count.append(torch.mean(spike).item())
-        count = torch.FloatTensor(count).flatten().to(spike.device)
-        return spike, count
-
-    def grad_flow(self, path):
-        # helps monitor the gradient flow
-        grad = [
-            b.synapse.grad_norm for b in self.blocks if hasattr(b, 'synapse')
-        ]
-
-        with open(path + 'gradFlow.txt', 'a') as f:
-            f.write(",".join(list(map(str, grad))) + '\n')
-
-        plt.figure()
-        plt.semilogy(grad)
-        plt.savefig(path + 'gradFlow.png')
-        plt.close()
-
-        return grad
-
-    def export_hdf5(self, filename):
-        """export network to hdf5 format."""
-        h = h5py.File(filename, 'w')
-        layer = h.create_group('layer')
-        for i, b in enumerate(self.blocks):
-            b.export_hdf5(layer.create_group(f'{i}'))
