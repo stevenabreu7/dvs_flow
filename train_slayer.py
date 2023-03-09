@@ -13,11 +13,6 @@ mar8,  1ms timestep, with delay, 1 layer
     python train_slayer.py 1 512d IDX
 
 once the current run is finished: 
-python train_slayer.py 10 512d 1
-python train_slayer.py 10 512d 2
-python train_slayer.py 10 512d 3
-python train_slayer.py 10 512d 4
-------
 python train_slayer.py 100 512d 1 & python train_slayer.py 100 512d 2
 python train_slayer.py 100 512d 3 & python train_slayer.py 100 512d 4
 """
@@ -67,6 +62,7 @@ train_folder = f'./logs/mar9_{layers}_dt{timestep_us}us/fold{test_file_idx}/'
 os.makedirs(os.path.join(train_folder, 'checkpoints'), exist_ok=True)
 
 print('loading dataset')
+# ds_tr, ds_te = get_datasets(DATA_FOLDER, temp_split=False, seed=42, run_checks=True)
 ds_tr, ds_te = get_datasets_fold(DATA_FOLDER, test_file_idx, run_checks=True, seed=42, 
                                  timestep_us=timestep_us)
 trainloader = DataLoader(ds_tr, batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
