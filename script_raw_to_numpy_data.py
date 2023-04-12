@@ -5,6 +5,10 @@ Run this script to convert the .raw data from the event-based camera into
 numpy arrays. Reads A1.raw, ..., A4.raw, B1.raw, ..., B4.raw files from the
 ./data/raw/ directory and stores the numpy arrays into the ./data/numpy/
 directory with the same filenames, but .npy file extension.
+
+NOTE: as of early 2023, the .raw files are not read correctly by expelliarmus.
+    first, read them with metavision into numpy arrays, then save them as 
+    .raw files with expelliarmus.
 """
 import os
 from expelliarmus import Wizard

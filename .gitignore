@@ -6,7 +6,8 @@ playground.ipynb
 playground/*
 cache/*
 tmp/*
-logs
+logs_cvpr
+logs_nice
 
 # other random stuff
 nmnist*
