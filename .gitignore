@@ -1,7 +1,7 @@
 # data
 data/*
-results/gent/models/*
-results/gent/models
+NICE23/results/models/*
+NICE23/results/models
 playground.ipynb
 playground/*
 cache/*
@@ -10,6 +10,8 @@ logs
 
 # other random stuff
 nmnist*
+*.sh
+data_lsm/*
 
 # torch checkpoints
 *.pt

@@ -25,16 +25,24 @@ class BinCytometryNetwork(torch.nn.Module):
             'requires_grad' : True,
         }
 
-        # parse layer string
-        delays = ['d' in l for l in layers.split('-')] + [False]
-        layer_dims = [2*32*24, *[int(re.findall(r'\d+', l)[0]) for l in layers.split('-')], 2]
+        if layers == 'linear':
+            self.blocks = torch.nn.ModuleList([
+                slayer.block.cuba.Dense(
+                    neuron_params, 2*32*24, 2,
+                    weight_norm=True, delay=False
+                )
+            ])
+        else:
+            # parse layer string
+            delays = ['d' in l for l in layers.split('-')] + [False]
+            layer_dims = [2*32*24, *[int(re.findall(r'\d+', l)[0]) for l in layers.split('-')], 2]
 
-        self.blocks = torch.nn.ModuleList([
-            slayer.block.cuba.Dense(
-                neuron_params, layer_dims[i], layer_dims[i+1],
-                weight_norm=True, delay=delays[i]
-            ) for i in range(len(delays))
-        ])
+            self.blocks = torch.nn.ModuleList([
+                slayer.block.cuba.Dense(
+                    neuron_params, layer_dims[i], layer_dims[i+1],
+                    weight_norm=True, delay=delays[i]
+                ) for i in range(len(delays))
+            ])
 
     def forward(self, spike):
         """Forward pass of the network.

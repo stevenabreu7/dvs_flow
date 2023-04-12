@@ -56,9 +56,11 @@ print(f'using timestep: {timestep_us}us')
 # arg: network layers
 layers = args.network
 net = BinCytometryNetwork(layers=layers).to(device)
+if layers == 'linear':
+    BATCH_SIZE = 128
 print(net)
 
-train_folder = f'./logs/mar9_{layers}_dt{timestep_us}us/fold{test_file_idx}/'
+train_folder = f'./logs/mar19_{layers}_dt{timestep_us}us/fold{test_file_idx}/'
 os.makedirs(os.path.join(train_folder, 'checkpoints'), exist_ok=True)
 
 print('loading dataset')
@@ -69,6 +71,7 @@ trainloader = DataLoader(ds_tr, batch_size=BATCH_SIZE, shuffle=True, num_workers
 testloader = DataLoader(ds_te, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
 
 error = slayer.loss.SpikeRate(
+    # true_rate=0.8, false_rate=0.2, reduction='sum'
     true_rate=0.2, false_rate=0.03, reduction='sum'
 ).to(device)
 
