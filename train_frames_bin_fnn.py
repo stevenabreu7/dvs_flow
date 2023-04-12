@@ -27,6 +27,28 @@ Test accuracy:  97.92%
 
 Training: 99.52 +- 0.23
 Testing:  97.51 +- 0.35
+
+
+trial 1
+Train accuracy: 99.41%
+Test accuracy:  96.42%
+
+trial 2
+Train accuracy: 99.73%
+Test accuracy:  97.34%
+
+trial 3
+Train accuracy: 99.49%
+Test accuracy:  97.64%
+
+trial 4
+Train accuracy: 99.19%
+Test accuracy:  97.86%
+
+np.array([99.41, 99.73, 99.49, 99.19]) 
+  -> training: 99.46\% $\pm$ 0.20\%
+np.array([96.42, 97.34, 97.64, 97.86]) 
+  -> testing: 97.32\% \pm 0.55\%
 """
 import numpy as np
 import matplotlib.pyplot as plt
@@ -89,7 +111,7 @@ for test_trial in range(1, 5):
 
     model = keras.Sequential([
         keras.layers.Dense(512, activation='relu', input_shape=(train_data_.shape[1],)),
-        keras.layers.Dense(512, activation='relu'),
+        # keras.layers.Dense(512, activation='relu'),
         keras.layers.Dense(2, activation='softmax'),
     ])
     model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
